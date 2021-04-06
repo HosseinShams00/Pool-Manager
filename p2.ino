@@ -479,10 +479,7 @@ void SetLocalTime()
   Lcd.home();
   Lcd.print("Set Your Times");
   Lcd.setCursor(0, 1);
-  Lcd.print("-->  ");
-  Lcd.print(Hour);
-  Lcd.print(":");
-  Lcd.print(Min);
+  Lcd.print("-->  00:00      ");
   
   while (true)
   {
