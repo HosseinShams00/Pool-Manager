@@ -472,15 +472,24 @@ bool GetKeypad()
 void SetLocalTime()
 {
 
-  int Hour = 0;
-  int Min = 0;
+  int Hour = rtc.now().hour(), Min = rtc.now().minute();
   bool LeftCursore = true;
   Lcd.clear();
   Lcd.home();
   Lcd.print("Set Your Times");
   Lcd.setCursor(0, 1);
-  Lcd.print("-->  00:00      ");
-  
+  Lcd.print("-->  ");
+
+  if (Hour <= 9)
+    Lcd.print("0");
+
+  Lcd.print(Hour);
+  Lcd.print(":");
+
+  if (Min <= 9)
+    Lcd.print("0");
+  Lcd.print(Min);
+
   while (true)
   {
 
