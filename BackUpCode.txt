@@ -5,46 +5,48 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-// One Wire Input Is Pin
-OneWire oneWire(8);
-DallasTemperature SensorDall(&oneWire);
+//////////////////////////////////////////
+#define KeyPadPin A0
 
-LiquidCrystal_I2C Lcd(0x20, 16, 2);
-DateTime Times;
-
-#define KeyPadPin A2
-
-#define Sensor_1_pin A0
-#define Sensor_2_pin A1
+#define Sensor_1_pin 8
 
 #define Relay_1_pin 2
 #define Relay_2_pin 3
 
 #define Sensor_1_Temp_Low_Address 1
 #define Sensor_1_Temp_HIGH_Address 2
-#define Sensor_2_Temp_Low_Address 3
-#define Sensor_2_Temp_HIGH_Address 4
+//////////////////////////////////////////
 
-int KeyPadReader = 0, SecendTemp = 0,
-    Sensor_1_Temp_Low = 10, Sensor_1_Temp_HIGH = 20,
-    Sensor_2_Temp_Low = 0, Sensor_2_Temp_HIGH = 10;
+int LastTime = 0, KeyPadReader = 0, Sensor_1_Temp = 0, Sensor_1_Temp_Low = 10, Sensor_1_Temp_HIGH = 20;
 
-bool Sensor_1_On = false, Sensor_2_On = false, _1Hour[24], _30Min[48], HourCheck = true;
+bool Sensor_1_On = false, _1Hour[24], _30Min[48], HourCheck = true;
 
-#define _1HourCheckArrayAddress 6
-#define _30MinCheckArrayAddress sizeof(&_1Hour) + 6;
+/// These Object Is For Get Temp Form Ds18B20 Sensor
+// One Wire Input Is Pin
+OneWire oneWire(Sensor_1_pin);
+DallasTemperature SensorDall(&oneWire);
 
-void Menu();
-void Sensor_Menu();
-void SetSensor(bool);
-int SetSensorValue(bool, bool, bool);
-void CheckTimersArray();
+// Lcd Object
+LiquidCrystal_I2C Lcd(0x20, 16, 2);
+
+#define _1HourCheckArrayAddress 6                   // 6 = Temp_sensore 1 , 2 High And Low Addres +  HourCheck + 1
+#define _30MinCheckArrayAddress sizeof(&_1Hour) + 7 // 7 = _1HourCheckArrayAddress + 1
+
+void Menu(); /// Main Menu For User
+
+/// Sensor Methods
+void SetSensor();                           //// Show Sensore Menu For Get HIGH And Low Temp
+int SetSensorValue(bool IsOff, bool IsLow); // Config And Write To EEPROM HIGH & LOW Temp For On Or Off
+
+//// Times Methods
+void CheckTimersArray(); // Check Timers Array And Check Them In EEPROM
+
 void TimerMenu();
-void SetLocalTime(int);
-int getTime();
-void SetTimerValue(bool Data[], int);
-bool GetKeypad();
-void TimeChecker(bool, int, int);
+void SetLocalTime();
+int getTimePeriod();
+void SetTimerValue(bool Data[], bool IsHour);       // Set Timer Value For Array And Save In EEPROM
+bool GetKeypad();                                   // Get ON Or OFF Value From User And Show This On Lcd
+void TimeChecker(bool HourCh, int Hour, int Minut); /// Check On Or OFF Form Times Array
 
 // KeyPad Values
 // Right : 0 - 60
@@ -55,22 +57,32 @@ void TimeChecker(bool, int, int);
 
 void setup()
 {
+  // Config Ds3231 Sheild ( Clock )
+  Wire.begin();
+  // This Object Is at  Sodaq_DS3231 Lib
+  rtc.begin(); /// RTC = Real Time Clock
+
   /// LCD Config
   Lcd.begin();
+  /// Serial Config For Send Resualt
   Serial.begin(9600);
 
   // Sensor Config For DS18B20
   SensorDall.begin();
   // KeyPad SetUP
   pinMode(KeyPadPin, OUTPUT);
-  pinMode(13, OUTPUT);
-  pinMode(12, OUTPUT);
-  pinMode(11, OUTPUT);
-  pinMode(10, OUTPUT);
-  pinMode(9, OUTPUT);
 
-  // SetUp Timesr
-  //SetLocalTime(0);
+  /// Config Push Button
+  // Select Button
+  pinMode(13, OUTPUT);
+  // Down Button
+  pinMode(12, OUTPUT);
+  // Up Button
+  pinMode(11, OUTPUT);
+  // Left Button
+  pinMode(10, OUTPUT);
+  // Right Button
+  pinMode(9, OUTPUT);
 
   // Relay Config
   pinMode(Relay_1_pin, OUTPUT);
@@ -78,17 +90,28 @@ void setup()
 
   // Sensor Config
   pinMode(Sensor_1_pin, OUTPUT);
-  // pinMode(Sensor_2_pin, OUTPUT);
 
   // Sensor Value Config
   Sensor_1_Temp_Low = EEPROM.read(Sensor_1_Temp_Low_Address);
   Sensor_1_Temp_HIGH = EEPROM.read(Sensor_1_Temp_HIGH_Address);
-  // Sensor_2_Temp_Low = EEPROM.read(Sensor_2_Temp_Low_Address);
-  // Sensor_2_Temp_HIGH = EEPROM.read(Sensor_2_Temp_HIGH_Address);
 
   // Check Timer
   CheckTimersArray();
+  /// Show Array Value ( Demo )
+  Serial.println("------ Hours Array ------");
+  for (int i = 0; i < 24; i++)
+  {
+    Serial.println(EEPROM.read(i + _1HourCheckArrayAddress));
+  }
 
+  Serial.println("------ min Array ------");
+
+  for (int i = 0; i < 48; i++)
+  {
+    Serial.println(EEPROM.read(i + _30MinCheckArrayAddress));
+  }
+
+  // Say Wellcome To User
   Lcd.home();
   Lcd.setCursor(0, 0);
   Lcd.print("    Wellcome    ");
@@ -98,91 +121,73 @@ void setup()
 
 void loop()
 {
-  SensorDall.requestTemperatures();
-  delay(500);
+  delay(150);
+  //// Check 1 minute has passed or not
+  if (LastTime != rtc.now().minute())
+  {
+    LastTime = rtc.now().minute();
+    Lcd.clear();
+    Lcd.home();
+    Lcd.print("Please Wait");
+    Lcd.setCursor(0, 1);
+    Lcd.print("Update Temp");
+    while (true)
+    {
+      // Send Rquest For Get Temp From Sensor
+      SensorDall.requestTemperatures();
+      delay(300);
+      Serial.println("Request Done ! ");
+      Sensor_1_Temp = SensorDall.getTempCByIndex(0);
 
-  Serial.println("Request Done ! ");
+      // If Device Connected Set Sensor Temp and Break Loop
+      if (Sensor_1_Temp != DEVICE_DISCONNECTED_C)
+      {
+        Serial.print("Device Is connected Temp Is : ");
+        Serial.println(Sensor_1_Temp);
+        break;
+      }
+      else
+      {
+        Serial.println("Device 0 Is Disconnected ");
+      }
+    }
+  }
+
   Lcd.clear();
   Lcd.home();
   Lcd.print("Sensor : ");
   Lcd.setCursor(9, 0);
 
-  // Read Analog Sensor
-  //int Sensor_1_Temp = analogRead(Sensor_1_pin) / 2;
-
-  // Read Digital Sensor
-
-  int Sensor_1_Temp = SensorDall.getTempCByIndex(0);
-
-  if (Sensor_1_Temp != DEVICE_DISCONNECTED_C)
-  {
-    Lcd.print(Sensor_1_Temp);
-
-    Serial.print("Device Is connected Temp Is : ");
-    Serial.println(Sensor_1_Temp);
-
-    SecendTemp = Sensor_1_Temp;
-  }
-  else
-  {
-    Serial.println("Device 0 Is Disconnected ");
-    Lcd.print(SecendTemp);
-  }
-
+  // Read Digital Sensor And Clock For Show On Lcd
+  Lcd.print(Sensor_1_Temp);
   Lcd.print(" C");
+
   Lcd.setCursor(0, 1);
   Lcd.print("Time : ");
-  Lcd.print(Times.hour());
+  Lcd.print(rtc.now().hour());
   Lcd.print(":");
-  Lcd.print(Times.minute());
+  Lcd.print(rtc.now().minute());
+  Lcd.print(":");
+  Lcd.print(rtc.now().second());
 
-  // Lcd.setCursor(0, 1);
-  // Lcd.print("Sensor 2 : ");
-  // Lcd.print(Sensor_2_Temp);
-  // delay(100);
-  //KeyPadReader = analogRead( KeyPadPin );
-
-  // Check Select Button
-  //    if (  KeyPadReader > 600 && KeyPadReader < 800 )
-  //    {
-  //      Menu();
-  //    }
   if (digitalRead(13) == HIGH)
   {
     delay(300);
     Menu();
   }
 
-  if (Sensor_1_Temp == Sensor_1_Temp_Low)
+  if (Sensor_1_Temp <= Sensor_1_Temp_Low)
   {
     Sensor_1_On = true;
     digitalWrite(Relay_1_pin, HIGH);
   }
-  else if (Sensor_1_Temp == Sensor_1_Temp_HIGH)
+  else if (Sensor_1_Temp >= Sensor_1_Temp_HIGH)
   {
     Sensor_1_On = false;
     digitalWrite(Relay_1_pin, LOW);
   }
 
-  // if ( Sensor_2_Temp == Sensor_2_Temp_Low )
-  // {
-  //   Sensor_2_On = true;
-  //   digitalWrite(Relay_2_pin , HIGH);
-  // }
-  // else if ( Sensor_2_Temp == Sensor_2_Temp_HIGH )
-  // {
-  //   Sensor_2_On = false;
-  //   digitalWrite(Relay_2_pin , LOW);
-  // }
-  // Serial.println(HourCheck);
-  // if (HourCheck)
-  // {
-  //   for (int i = 0; i < 24; i++)
-  //   {
-  //     Serial.println(EEPROM.read(i + _1HourCheckArrayAddress));
-  //   }
-  // }
-  TimeChecker(HourCheck, Times.hour(), Times.minute());
+  TimeChecker(HourCheck, rtc.now().hour(), rtc.now().minute());
 }
 
 void Menu()
@@ -196,10 +201,10 @@ void Menu()
   while (true)
   {
     /// if Press Submit Button Goto This Method
-    //  else Press Up Button Break While
-    // For This Option Don't Check Down And Home Key
+    ///  else Press Up Button Break While
+    /// For This Option Don't Check Down And Home Key
 
-    KeyPadReader = analogRead(KeyPadPin);
+    //KeyPadReader = analogRead(KeyPadPin);
 
     //if (  KeyPadReader > 60 && KeyPadReader < 200 )     // Check Up Button
     if (digitalRead(11) == HIGH)
@@ -211,7 +216,7 @@ void Menu()
       delay(400);
       Sensors = true;
     }
-    //else if ( KeyPadReader > 400 && KeyPadReader < 600 )  // Check Down Button
+    //else if ( KeyPadReader > 200 && KeyPadReader < 400 )  // Check Down Button
     else if (digitalRead(12) == HIGH)
     {
       Lcd.setCursor(0, 0);
@@ -221,17 +226,17 @@ void Menu()
       delay(400);
       Sensors = false;
     }
-    else if (KeyPadReader > 0 && KeyPadReader < 60) // Check Right Button
-    {
-    }
-    //else if (  KeyPadReader > 600 && KeyPadReader < 800 )    // Check Submit Button
+    // else if (KeyPadReader > 0 && KeyPadReader < 60) // Check Right Button
+    // {
+    // }
+    //else if (  KeyPadReader > 600 && KeyPadReader < 800 )    // Check Select Button
     else if (digitalRead(13) == HIGH)
     {
       delay(400);
       if (Sensors)
       {
         delay(300);
-        Sensor_Menu();
+        SetSensor();
       }
       else
       {
@@ -244,101 +249,31 @@ void Menu()
   Lcd.clear();
 }
 
-void Sensor_Menu()
+void SetSensor()
 {
-  // bool Sensor1_Select = true;
-  // Lcd.clear();
-  // Lcd.setCursor(0, 0);
-  // Lcd.print("* Sensor 1");
-  // Lcd.setCursor(0, 1);
-  // Lcd.print("  Sensor 2");
+  // Get Temp From User For Check Relay
+  delay(500);
+  Sensor_1_Temp_Low = SetSensorValue(true, true);
+  Sensor_1_Temp_HIGH = SetSensorValue(false, false);
 
-  // while (true)
-  // {
-  //   delay(100);
-  //   /// if Press Submit Button Goto This Method
-  //   //  else Press Up Or Down Or Home Button Break While
-  //   // Note : For This Options Down And Home Button Is Equal
+  EEPROM.update(Sensor_1_Temp_Low_Address, Sensor_1_Temp_Low);
+  EEPROM.update(Sensor_1_Temp_HIGH_Address, Sensor_1_Temp_HIGH);
 
-  //   // KeyPadReader = analogRead( KeyPadPin );
-  //   // Check Up Button
-  //   //if (  KeyPadReader > 60 && KeyPadReader < 200 )
-  //   if ( digitalRead(11) == HIGH )
-  //   {
-  //     delay(100);
-  //     Lcd.setCursor(0, 1);
-  //     Lcd.write(' ');
-  //     Lcd.setCursor(0, 0);
-  //     Lcd.write('*');
-  //     Sensor1_Select = true;
-  //   }
-  //   //else if (  KeyPadReader > 400 && KeyPadReader < 600 ) // Check Down Button
-  //   if ( digitalRead(12) == HIGH )
-  //   {
-  //     delay(100);
-  //     Lcd.setCursor(0, 0);
-  //     Lcd.write(' ');
-  //     Lcd.setCursor(0, 1);
-  //     Lcd.write('*');
-  //     Sensor1_Select = false;
-  //   }
-  //   else if (  KeyPadReader > 0 && KeyPadReader < 60 )    // Check Right Button
-  //   {
-
-  //   }
-  //   //else if (  KeyPadReader > 600 && KeyPadReader < 800 )    // Check Submit Button
-  //   else if ( digitalRead(13) == HIGH )
-  //   {
-  delay(300);
-  //SetSensor(Sensor1_Select);
-  SetSensor(true);
-  //break;
-  //}
-  //}
-}
-
-void SetSensor(bool IsSensor_1)
-{
-  if (IsSensor_1)
-  {
-    delay(500);
-    Sensor_1_Temp_Low = SetSensorValue(IsSensor_1, true, true);
-    Sensor_1_Temp_HIGH = SetSensorValue(IsSensor_1, false, false);
-
-    EEPROM.update(Sensor_1_Temp_Low_Address, Sensor_1_Temp_Low);
-    EEPROM.update(Sensor_1_Temp_HIGH_Address, Sensor_1_Temp_HIGH);
-  }
-  else
-  {
-    delay(500);
-    Sensor_2_Temp_Low = SetSensorValue(IsSensor_1, true, true);
-    Sensor_2_Temp_HIGH = SetSensorValue(IsSensor_1, false, false);
-
-    EEPROM.update(Sensor_2_Temp_Low_Address, Sensor_2_Temp_Low);
-    EEPROM.update(Sensor_2_Temp_HIGH_Address, Sensor_2_Temp_HIGH);
-  }
   Lcd.clear();
 }
 
-int SetSensorValue(bool IsSensor_1, bool IsOff, bool IsLow)
+int SetSensorValue(bool IsOff, bool IsLow)
 {
   int Outp = 0;
-  if (IsSensor_1 && IsLow)
+  if (IsLow)
   {
     Outp = Sensor_1_Temp_Low;
   }
-  else if (IsSensor_1 && !IsLow)
+  else
   {
     Outp = Sensor_1_Temp_HIGH;
   }
-  else if (!IsSensor_1 && IsLow)
-  {
-    Outp = Sensor_2_Temp_Low;
-  }
-  else if (!IsSensor_1 && !IsLow)
-  {
-    Outp = Sensor_2_Temp_HIGH;
-  }
+
   Lcd.clear();
   Lcd.setCursor(0, 0);
   if (IsOff)
@@ -355,6 +290,8 @@ int SetSensorValue(bool IsSensor_1, bool IsOff, bool IsLow)
   while (true)
   {
 
+    // KeyPadReader = analogRead(KeyPadPin);
+    //if (  KeyPadReader > 60 && KeyPadReader < 200 )     // Check Up Button
     if (digitalRead(11) == HIGH)
     {
       delay(300);
@@ -377,6 +314,7 @@ int SetSensorValue(bool IsSensor_1, bool IsOff, bool IsLow)
         Lcd.print(" C");
       }
     }
+    //else if ( KeyPadReader > 200 && KeyPadReader < 400 )  // Check Down Button
     else if (digitalRead(12) == HIGH)
     {
       delay(300);
@@ -399,6 +337,7 @@ int SetSensorValue(bool IsSensor_1, bool IsOff, bool IsLow)
         Lcd.print(" C");
       }
     }
+    //else if (  KeyPadReader > 600 && KeyPadReader < 800 )    // Check Submit Button
     else if (digitalRead(13) == HIGH)
     {
       delay(1000);
@@ -424,15 +363,111 @@ int SetSensorValue(bool IsSensor_1, bool IsOff, bool IsLow)
   return Outp;
 }
 
+void CheckTimersArray()
+{
+  for (int j = 0; j < 24; j++)
+  {
+    if (EEPROM.read(j + _1HourCheckArrayAddress) != 255)
+    {
+      _1Hour[j] = EEPROM.read(j + _1HourCheckArrayAddress);
+    }
+    else
+    {
+      EEPROM.write(j + _1HourCheckArrayAddress, false);
+      _1Hour[j] = false;
+    }
+  }
+
+  for (int j = 0; j < 48; j++)
+  {
+    if (EEPROM.read(j + _30MinCheckArrayAddress) != 255)
+    {
+      _30Min[j] = EEPROM.read(j + _30MinCheckArrayAddress);
+    }
+    else
+    {
+      EEPROM.write(j + _30MinCheckArrayAddress, false);
+      _30Min[j] = false;
+    }
+  }
+}
+
+void TimerMenu()
+{
+  bool LocalTime = false;
+  Lcd.clear();
+  Lcd.home();
+  Lcd.print("* Set Timer");
+  Lcd.setCursor(0, 1);
+  Lcd.print("  Set Local Time");
+  while (true)
+  {
+    /// if Press Submit Button Goto This Method
+    //  else Press Up Button Break While
+    // For This Option Don't Check Down And Home Key
+
+    // KeyPadReader = analogRead(KeyPadPin);
+
+    //if (  KeyPadReader > 60 && KeyPadReader < 200 )     // Check Up Button
+    if (digitalRead(11) == HIGH)
+    {
+      delay(400);
+      Lcd.setCursor(0, 0);
+      Lcd.write('*');
+      Lcd.setCursor(0, 1);
+      Lcd.write(' ');
+      LocalTime = false;
+    }
+    //else if ( KeyPadReader > 200 && KeyPadReader < 400 )  // Check Down Button
+    else if (digitalRead(12) == HIGH)
+    {
+      delay(400);
+      Lcd.setCursor(0, 0);
+      Lcd.write(' ');
+      Lcd.setCursor(0, 1);
+      Lcd.write('*');
+      LocalTime = true;
+    }
+    // else if (KeyPadReader > 0 && KeyPadReader < 60) // Check Right Button
+    // {
+    // }
+    //else if (  KeyPadReader > 600 && KeyPadReader < 800 )    // Check Submit Button
+    else if (digitalRead(13) == HIGH)
+    {
+      delay(300);
+      if (LocalTime)
+      {
+        SetLocalTime();
+      }
+      else
+      {
+        int Time_Period = 0;
+        Time_Period = getTimePeriod();
+        if (Time_Period == 60)
+        {
+          SetTimerValue(_1Hour, true);
+        }
+        else if (Time_Period == 30)
+        {
+          SetTimerValue(_30Min, false);
+        }
+      }
+      break;
+    }
+  }
+}
+
 bool GetKeypad()
 {
-  int i = 1;
   bool IsOn = true;
   Lcd.setCursor(0, 1);
   Lcd.print("* ON        OFF ");
-  while (i)
+  while (true)
   {
-    if (digitalRead(9) == HIGH) // Right Button
+
+    // KeyPadReader = analogRead(KeyPadPin);
+    // if (KeyPadReader > 0 && KeyPadReader < 60) // Check Right Button
+    if (digitalRead(9) == HIGH)
     {
       delay(300);
       Lcd.setCursor(0, 1);
@@ -441,6 +476,7 @@ bool GetKeypad()
       Lcd.print("*");
       IsOn = false;
     }
+    //else if ( KeyPadReader > 400 && KeyPadReader < 600 )  // Check Left Button
     else if (digitalRead(10) == HIGH) // Left Button
     {
       delay(300);
@@ -450,6 +486,7 @@ bool GetKeypad()
       Lcd.print(" ");
       IsOn = true;
     }
+    // else if ( KeyPadReader > 600 && KeyPadReader < 800 )  // Check Left Button
     else if (digitalRead(13) == HIGH) // Submit Button
     {
       delay(300);
@@ -459,57 +496,33 @@ bool GetKeypad()
   return IsOn;
 }
 
-void CheckTimersArray()
+void SetLocalTime()
 {
-  HourCheck = EEPROM.read(5);
-  if (HourCheck)
-  {
-    if (EEPROM.read(_1HourCheckArrayAddress) != 255)
-    {
-      for (int i = 0; i < 24; i++)
-      {
-        _1Hour[i] = EEPROM.read(i + _1HourCheckArrayAddress);
-      }
-    }
-    else
-    {
-      for (int i = 0; i < 24; i++)
-      {
-        EEPROM.write(i + _1HourCheckArrayAddress, false);
-      }
-    }
-  }
-  else
-  {
-    if (EEPROM.read(_30MinCheckArrayAddress) != 255)
-    {
-      for (int i = 0; i < 48; i++)
-      {
-        _30Min[i] = EEPROM.read(i + _30MinCheckArrayAddress);
-      }
-    }
-    else
-    {
-      for (int i = 0; i < 48; i++)
-      {
-        EEPROM.write(i + _30MinCheckArrayAddress, false);
-      }
-    }
-  }
-}
-
-void SetLocalTime(int TimerIndex)
-{
-  int Hour = 0, Min = 0;
+  // Set Real Time And Show To User
+  int Hour = rtc.now().hour(), Min = rtc.now().minute();
+  // Cursor Location In Lcd
   bool LeftCursore = true;
   Lcd.clear();
   Lcd.home();
   Lcd.print("Set Your Times");
   Lcd.setCursor(0, 1);
-  Lcd.print("-->  00:00      ");
+  Lcd.print("-->  ");
+
+  if (Hour <= 9)
+    Lcd.print("0");
+
+  Lcd.print(Hour);
+  Lcd.print(":");
+
+  if (Min <= 9)
+    Lcd.print("0");
+  Lcd.print(Min);
+
   while (true)
   {
+    //KeyPadReader = analogRead(KeyPadPin);
 
+    //if (  KeyPadReader > 0 && KeyPadReader < 60 )     // Check Right Button
     if (digitalRead(9) == HIGH) // Right Button
     {
       delay(300);
@@ -519,7 +532,7 @@ void SetLocalTime(int TimerIndex)
       Lcd.print("<-- ");
       LeftCursore = false;
     }
-
+    // else if (  KeyPadReader > 400 && KeyPadReader < 600 )     // Check Left Button
     else if (digitalRead(10) == HIGH) // Left Button
     {
       delay(300);
@@ -529,7 +542,7 @@ void SetLocalTime(int TimerIndex)
       Lcd.print("-->  ");
       LeftCursore = true;
     }
-
+    // else if (  KeyPadReader > 60 && KeyPadReader < 200 )     // Check Up Button
     else if (digitalRead(11) == HIGH) // Up Button
     {
       delay(300);
@@ -580,7 +593,7 @@ void SetLocalTime(int TimerIndex)
         }
       }
     }
-
+    // else if (  KeyPadReader > 200 && KeyPadReader < 400 )     // Check Down Button
     else if (digitalRead(12) == HIGH) // Down Button
     {
       delay(300);
@@ -627,7 +640,7 @@ void SetLocalTime(int TimerIndex)
         }
       }
     }
-
+    // else if (  KeyPadReader > 600 && KeyPadReader < 800 )     // Check Submit Button
     else if (digitalRead(13) == HIGH) // Submit Button
     {
       break;
@@ -637,77 +650,9 @@ void SetLocalTime(int TimerIndex)
   delay(300);
   DateTime dt(2021, 1, 1, Hour, Min, 0, 0);
   rtc.setDateTime(dt);
-  if (TimerIndex == 0)
-  {
-    Times = rtc.now();
-  }
 }
 
-void TimerMenu()
-{
-  bool LocalTime = false;
-  Lcd.clear();
-  Lcd.home();
-  Lcd.print("* Set Timer");
-  Lcd.setCursor(0, 1);
-  Lcd.print("  Set Local Time");
-  while (true)
-  {
-    /// if Press Submit Button Goto This Method
-    //  else Press Up Button Break While
-    // For This Option Don't Check Down And Home Key
-
-    KeyPadReader = analogRead(KeyPadPin);
-
-    //if (  KeyPadReader > 60 && KeyPadReader < 200 )     // Check Up Button
-    if (digitalRead(11) == HIGH)
-    {
-      delay(400);
-      Lcd.setCursor(0, 0);
-      Lcd.write('*');
-      Lcd.setCursor(0, 1);
-      Lcd.write(' ');
-      LocalTime = false;
-    }
-    //else if ( KeyPadReader > 400 && KeyPadReader < 600 )  // Check Down Button
-    else if (digitalRead(12) == HIGH)
-    {
-      delay(400);
-      Lcd.setCursor(0, 0);
-      Lcd.write(' ');
-      Lcd.setCursor(0, 1);
-      Lcd.write('*');
-      LocalTime = true;
-    }
-    else if (KeyPadReader > 0 && KeyPadReader < 60) // Check Right Button
-    {
-    }
-    else if (digitalRead(13) == HIGH)
-    {
-      delay(300);
-      if (LocalTime)
-      {
-        SetLocalTime(0);
-      }
-      else
-      {
-        int Time_Returned = 0;
-        Time_Returned = getTime();
-        if (Time_Returned == 60)
-        {
-          SetTimerValue(_1Hour, true);
-        }
-        else if (Time_Returned == 30)
-        {
-          SetTimerValue(_30Min, false);
-        }
-      }
-      break;
-    }
-  }
-}
-
-int getTime()
+int getTimePeriod()
 {
   bool IsHours = false;
   Lcd.clear();
@@ -717,6 +662,8 @@ int getTime()
   Lcd.print("*30 Min   60 Min");
   while (true)
   {
+
+    // if (  KeyPadReader > 0 && KeyPadReader < 60 )     // Check Right Button
     if (digitalRead(9) == HIGH) // Right Button
     {
       delay(300);
@@ -726,6 +673,7 @@ int getTime()
       Lcd.print("*");
       IsHours = true;
     }
+    // else if (  KeyPadReader > 400 && KeyPadReader < 600 )     // Check Left Button
     else if (digitalRead(10) == HIGH) // Left Button
     {
       delay(300);
@@ -735,6 +683,7 @@ int getTime()
       Lcd.print(" ");
       IsHours = false;
     }
+    // else if (  KeyPadReader > 600 && KeyPadReader < 800 )     // Check Submit Button
     else if (digitalRead(13) == HIGH) // Submit Button
     {
       delay(300);
