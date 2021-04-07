@@ -5,7 +5,8 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-#define KeyPadPin A2
+//////////////////////////////////////////
+#define KeyPadPin A0
 
 #define Sensor_1_pin 8
 
@@ -14,31 +15,38 @@
 
 #define Sensor_1_Temp_Low_Address 1
 #define Sensor_1_Temp_HIGH_Address 2
+//////////////////////////////////////////
 
 int LastTime = 0, KeyPadReader = 0, Sensor_1_Temp = 0, Sensor_1_Temp_Low = 10, Sensor_1_Temp_HIGH = 20;
 
 bool Sensor_1_On = false, _1Hour[24], _30Min[48], HourCheck = true;
 
+/// These Object Is For Get Temp Form Ds18B20 Sensor
 // One Wire Input Is Pin
 OneWire oneWire(Sensor_1_pin);
 DallasTemperature SensorDall(&oneWire);
 
+// Lcd Object
 LiquidCrystal_I2C Lcd(0x20, 16, 2);
 
 #define _1HourCheckArrayAddress 6                   // 6 = Temp_sensore 1 , 2 High And Low Addres +  HourCheck + 1
 #define _30MinCheckArrayAddress sizeof(&_1Hour) + 7 // 7 = _1HourCheckArrayAddress + 1
 
-void Menu();
-void SetSensor();
-int SetSensorValue(bool IsOff, bool IsLow);
+void Menu(); /// Main Menu For User
 
-void CheckTimersArray();
+/// Sensor Methods
+void SetSensor();                           //// Show Sensore Menu For Get HIGH And Low Temp
+int SetSensorValue(bool IsOff, bool IsLow); // Config And Write To EEPROM HIGH & LOW Temp For On Or Off
+
+//// Times Methods
+void CheckTimersArray(); // Check Timers Array And Check Them In EEPROM
+
 void TimerMenu();
 void SetLocalTime();
-int getTime();
-void SetTimerValue(bool Data[], bool IsHour);
-bool GetKeypad();
-void TimeChecker(bool HourCh, int Hour, int Minut);
+int getTimePeriod();
+void SetTimerValue(bool Data[], bool IsHour);       // Set Timer Value For Array And Save In EEPROM
+bool GetKeypad();                                   // Get ON Or OFF Value From User And Show This On Lcd
+void TimeChecker(bool HourCh, int Hour, int Minut); /// Check On Or OFF Form Times Array
 
 // KeyPad Values
 // Right : 0 - 60
@@ -49,21 +57,31 @@ void TimeChecker(bool HourCh, int Hour, int Minut);
 
 void setup()
 {
+  // Config Ds3231 Sheild ( Clock )
   Wire.begin();
-  rtc.begin();
+  // This Object Is at  Sodaq_DS3231 Lib
+  rtc.begin(); /// RTC = Real Time Clock
 
   /// LCD Config
   Lcd.begin();
+  /// Serial Config For Send Resualt
   Serial.begin(9600);
 
   // Sensor Config For DS18B20
   SensorDall.begin();
   // KeyPad SetUP
   pinMode(KeyPadPin, OUTPUT);
+
+  /// Config Push Button
+  // Select Button
   pinMode(13, OUTPUT);
+  // Down Button
   pinMode(12, OUTPUT);
+  // Up Button
   pinMode(11, OUTPUT);
+  // Left Button
   pinMode(10, OUTPUT);
+  // Right Button
   pinMode(9, OUTPUT);
 
   // Relay Config
@@ -79,17 +97,21 @@ void setup()
 
   // Check Timer
   CheckTimersArray();
+  /// Show Array Value ( Demo )
   Serial.println("------ Hours Array ------");
   for (int i = 0; i < 24; i++)
   {
     Serial.println(EEPROM.read(i + _1HourCheckArrayAddress));
   }
+
   Serial.println("------ min Array ------");
+
   for (int i = 0; i < 48; i++)
   {
     Serial.println(EEPROM.read(i + _30MinCheckArrayAddress));
   }
 
+  // Say Wellcome To User
   Lcd.home();
   Lcd.setCursor(0, 0);
   Lcd.print("    Wellcome    ");
@@ -99,12 +121,6 @@ void setup()
 
 void loop()
 {
-
-  Serial.print(rtc.now().hour());
-  Serial.print(":");
-  Serial.print(rtc.now().minute());
-  Serial.print(":");
-  Serial.println(rtc.now().second());
   delay(150);
   //// Check 1 minute has passed or not
   if (LastTime != rtc.now().minute())
@@ -117,6 +133,7 @@ void loop()
     Lcd.print("Update Temp");
     while (true)
     {
+      // Send Rquest For Get Temp From Sensor
       SensorDall.requestTemperatures();
       delay(300);
       Serial.println("Request Done ! ");
@@ -141,10 +158,10 @@ void loop()
   Lcd.print("Sensor : ");
   Lcd.setCursor(9, 0);
 
-  // Read Digital Sensor
+  // Read Digital Sensor And Clock For Show On Lcd
   Lcd.print(Sensor_1_Temp);
-
   Lcd.print(" C");
+
   Lcd.setCursor(0, 1);
   Lcd.print("Time : ");
   Lcd.print(rtc.now().hour());
@@ -184,10 +201,10 @@ void Menu()
   while (true)
   {
     /// if Press Submit Button Goto This Method
-    //  else Press Up Button Break While
-    // For This Option Don't Check Down And Home Key
+    ///  else Press Up Button Break While
+    /// For This Option Don't Check Down And Home Key
 
-    KeyPadReader = analogRead(KeyPadPin);
+    //KeyPadReader = analogRead(KeyPadPin);
 
     //if (  KeyPadReader > 60 && KeyPadReader < 200 )     // Check Up Button
     if (digitalRead(11) == HIGH)
@@ -199,7 +216,7 @@ void Menu()
       delay(400);
       Sensors = true;
     }
-    //else if ( KeyPadReader > 400 && KeyPadReader < 600 )  // Check Down Button
+    //else if ( KeyPadReader > 200 && KeyPadReader < 400 )  // Check Down Button
     else if (digitalRead(12) == HIGH)
     {
       Lcd.setCursor(0, 0);
@@ -209,10 +226,10 @@ void Menu()
       delay(400);
       Sensors = false;
     }
-    else if (KeyPadReader > 0 && KeyPadReader < 60) // Check Right Button
-    {
-    }
-    //else if (  KeyPadReader > 600 && KeyPadReader < 800 )    // Check Submit Button
+    // else if (KeyPadReader > 0 && KeyPadReader < 60) // Check Right Button
+    // {
+    // }
+    //else if (  KeyPadReader > 600 && KeyPadReader < 800 )    // Check Select Button
     else if (digitalRead(13) == HIGH)
     {
       delay(400);
@@ -234,6 +251,7 @@ void Menu()
 
 void SetSensor()
 {
+  // Get Temp From User For Check Relay
   delay(500);
   Sensor_1_Temp_Low = SetSensorValue(true, true);
   Sensor_1_Temp_HIGH = SetSensorValue(false, false);
@@ -272,6 +290,8 @@ int SetSensorValue(bool IsOff, bool IsLow)
   while (true)
   {
 
+    // KeyPadReader = analogRead(KeyPadPin);
+    //if (  KeyPadReader > 60 && KeyPadReader < 200 )     // Check Up Button
     if (digitalRead(11) == HIGH)
     {
       delay(300);
@@ -294,6 +314,7 @@ int SetSensorValue(bool IsOff, bool IsLow)
         Lcd.print(" C");
       }
     }
+    //else if ( KeyPadReader > 200 && KeyPadReader < 400 )  // Check Down Button
     else if (digitalRead(12) == HIGH)
     {
       delay(300);
@@ -316,6 +337,7 @@ int SetSensorValue(bool IsOff, bool IsLow)
         Lcd.print(" C");
       }
     }
+    //else if (  KeyPadReader > 600 && KeyPadReader < 800 )    // Check Submit Button
     else if (digitalRead(13) == HIGH)
     {
       delay(1000);
@@ -384,7 +406,7 @@ void TimerMenu()
     //  else Press Up Button Break While
     // For This Option Don't Check Down And Home Key
 
-    KeyPadReader = analogRead(KeyPadPin);
+    // KeyPadReader = analogRead(KeyPadPin);
 
     //if (  KeyPadReader > 60 && KeyPadReader < 200 )     // Check Up Button
     if (digitalRead(11) == HIGH)
@@ -396,7 +418,7 @@ void TimerMenu()
       Lcd.write(' ');
       LocalTime = false;
     }
-    //else if ( KeyPadReader > 400 && KeyPadReader < 600 )  // Check Down Button
+    //else if ( KeyPadReader > 200 && KeyPadReader < 400 )  // Check Down Button
     else if (digitalRead(12) == HIGH)
     {
       delay(400);
@@ -406,9 +428,10 @@ void TimerMenu()
       Lcd.write('*');
       LocalTime = true;
     }
-    else if (KeyPadReader > 0 && KeyPadReader < 60) // Check Right Button
-    {
-    }
+    // else if (KeyPadReader > 0 && KeyPadReader < 60) // Check Right Button
+    // {
+    // }
+    //else if (  KeyPadReader > 600 && KeyPadReader < 800 )    // Check Submit Button
     else if (digitalRead(13) == HIGH)
     {
       delay(300);
@@ -418,13 +441,13 @@ void TimerMenu()
       }
       else
       {
-        int Time_Returned = 0;
-        Time_Returned = getTime();
-        if (Time_Returned == 60)
+        int Time_Period = 0;
+        Time_Period = getTimePeriod();
+        if (Time_Period == 60)
         {
           SetTimerValue(_1Hour, true);
         }
-        else if (Time_Returned == 30)
+        else if (Time_Period == 30)
         {
           SetTimerValue(_30Min, false);
         }
@@ -436,13 +459,15 @@ void TimerMenu()
 
 bool GetKeypad()
 {
-  int i = 1;
   bool IsOn = true;
   Lcd.setCursor(0, 1);
   Lcd.print("* ON        OFF ");
-  while (i)
+  while (true)
   {
-    if (digitalRead(9) == HIGH) // Right Button
+
+    // KeyPadReader = analogRead(KeyPadPin);
+    // if (KeyPadReader > 0 && KeyPadReader < 60) // Check Right Button
+    if (digitalRead(9) == HIGH)
     {
       delay(300);
       Lcd.setCursor(0, 1);
@@ -451,6 +476,7 @@ bool GetKeypad()
       Lcd.print("*");
       IsOn = false;
     }
+    //else if ( KeyPadReader > 400 && KeyPadReader < 600 )  // Check Left Button
     else if (digitalRead(10) == HIGH) // Left Button
     {
       delay(300);
@@ -460,6 +486,7 @@ bool GetKeypad()
       Lcd.print(" ");
       IsOn = true;
     }
+    // else if ( KeyPadReader > 600 && KeyPadReader < 800 )  // Check Left Button
     else if (digitalRead(13) == HIGH) // Submit Button
     {
       delay(300);
@@ -471,8 +498,9 @@ bool GetKeypad()
 
 void SetLocalTime()
 {
-
+  // Set Real Time And Show To User
   int Hour = rtc.now().hour(), Min = rtc.now().minute();
+  // Cursor Location In Lcd
   bool LeftCursore = true;
   Lcd.clear();
   Lcd.home();
@@ -492,7 +520,9 @@ void SetLocalTime()
 
   while (true)
   {
+    //KeyPadReader = analogRead(KeyPadPin);
 
+    //if (  KeyPadReader > 0 && KeyPadReader < 60 )     // Check Right Button
     if (digitalRead(9) == HIGH) // Right Button
     {
       delay(300);
@@ -502,7 +532,7 @@ void SetLocalTime()
       Lcd.print("<-- ");
       LeftCursore = false;
     }
-
+    // else if (  KeyPadReader > 400 && KeyPadReader < 600 )     // Check Left Button
     else if (digitalRead(10) == HIGH) // Left Button
     {
       delay(300);
@@ -512,7 +542,7 @@ void SetLocalTime()
       Lcd.print("-->  ");
       LeftCursore = true;
     }
-
+    // else if (  KeyPadReader > 60 && KeyPadReader < 200 )     // Check Up Button
     else if (digitalRead(11) == HIGH) // Up Button
     {
       delay(300);
@@ -563,7 +593,7 @@ void SetLocalTime()
         }
       }
     }
-
+    // else if (  KeyPadReader > 200 && KeyPadReader < 400 )     // Check Down Button
     else if (digitalRead(12) == HIGH) // Down Button
     {
       delay(300);
@@ -610,7 +640,7 @@ void SetLocalTime()
         }
       }
     }
-
+    // else if (  KeyPadReader > 600 && KeyPadReader < 800 )     // Check Submit Button
     else if (digitalRead(13) == HIGH) // Submit Button
     {
       break;
@@ -622,7 +652,7 @@ void SetLocalTime()
   rtc.setDateTime(dt);
 }
 
-int getTime()
+int getTimePeriod()
 {
   bool IsHours = false;
   Lcd.clear();
@@ -632,6 +662,8 @@ int getTime()
   Lcd.print("*30 Min   60 Min");
   while (true)
   {
+
+    // if (  KeyPadReader > 0 && KeyPadReader < 60 )     // Check Right Button
     if (digitalRead(9) == HIGH) // Right Button
     {
       delay(300);
@@ -641,6 +673,7 @@ int getTime()
       Lcd.print("*");
       IsHours = true;
     }
+    // else if (  KeyPadReader > 400 && KeyPadReader < 600 )     // Check Left Button
     else if (digitalRead(10) == HIGH) // Left Button
     {
       delay(300);
@@ -650,6 +683,7 @@ int getTime()
       Lcd.print(" ");
       IsHours = false;
     }
+    // else if (  KeyPadReader > 600 && KeyPadReader < 800 )     // Check Submit Button
     else if (digitalRead(13) == HIGH) // Submit Button
     {
       delay(300);
