@@ -5,7 +5,8 @@ This project is for the Arduino board.
 Tools needed for this project:
 Sensor DS18B20 or DS18B21
 LCD
-There are a number of push buttons
+A number of push buttons
+And the shield is the clock
 
 
 =========================
@@ -15,4 +16,5 @@ There are a number of push buttons
 ابزار های مورد نیاز برای این پروژه :
 سنسور DS18B20 یا DS18B21
 LCD 
-تعدادی دکمه فشاری است
+تعدادی دکمه فشاری
+و شیلد ساعت است
