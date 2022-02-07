@@ -749,12 +749,12 @@ void SetTimerValue(bool Data[], bool IsHour)
 
       if (GetKeypad())
       {
-        _30Min[Counter] = true;
+        Data[Counter] = true;
         EEPROM.update(Counter + _30MinCheckArrayAddress, true);
       }
       else
       {
-        _30Min[Counter] = false;
+        Data[Counter] = false;
         EEPROM.update(Counter + _30MinCheckArrayAddress, false);
       }
 
@@ -767,12 +767,12 @@ void SetTimerValue(bool Data[], bool IsHour)
       Counter++;
       if (GetKeypad())
       {
-        _30Min[Counter] = true;
+        Data[Counter] = true;
         EEPROM.update(Counter + _30MinCheckArrayAddress, true);
       }
       else
       {
-        _30Min[Counter] = false;
+        Data[Counter] = false;
         EEPROM.update(Counter + _30MinCheckArrayAddress, false);
       }
     }
