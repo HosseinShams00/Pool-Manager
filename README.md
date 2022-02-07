@@ -18,3 +18,7 @@ And the shield is the clock
 LCD 
 تعدادی دکمه فشاری
 و شیلد ساعت است
+
+
+![image](https://user-images.githubusercontent.com/72279011/152774725-de941526-96c3-462a-88af-8b598ecdbff2.png)
+
